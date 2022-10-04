@@ -173,6 +173,7 @@ export default class Preview {
       }
 
       const story = this._getStory(storyId);
+      console.log('_selectStoryEvent', {storyId, story});
       this._selectStory(story);
     }
   }

@@ -5,6 +5,7 @@ import Events from '@storybook/core-events';
 import React, { useMemo, useState } from 'react';
 import { SectionList, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import WebView from 'react-native-webview';
 import { GridIcon, StoryIcon } from '../Shared/icons';
 import { Header, Name } from '../Shared/text';
 
@@ -170,6 +171,7 @@ const StoryListView = ({ selectedStory, storyStore }: Props) => {
 
   const changeStory = (storyId: string) => {
     const channel = addons.getChannel();
+    console.log('changeStory', {storyId});
     channel.emit(Events.SET_CURRENT_STORY, { storyId });
   };
 
@@ -209,4 +211,80 @@ const StoryListView = ({ selectedStory, storyStore }: Props) => {
   );
 };
 
-export default StoryListView;
+// export default StoryListView;
+
+const html = String.raw`
+<!doctype html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script type="text/javascript">
+    function changeStory(storyId) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({
+        type: 'emit',
+        payload: {
+          event: 'setCurrentStory',
+          args: {storyId}
+        }
+      }));
+    }
+    
+    function storyChanged(storyId) {
+      document.getElementById('selected-story').innerHTML = 'Selection: ' + storyId;
+    }
+  </script>
+</head>
+<body>
+  <h1>This is a static HTML source</h1>
+  <div id='selected-story'>Selection: nothing</div>
+  <div>
+    <button type="button" onclick="changeStory('boolean--basic')">Boolean: Basic</button>
+  </div>
+  <div>
+    <button type="button" onclick="changeStory('date--basic')">Date: Basic</button>
+  </div>
+</body>
+</html>
+`;
+
+function WebViewSidebar(props: any) {
+  const onMessage = React.useCallback((event) => {
+    const msg = JSON.parse(event.nativeEvent.data);
+    console.log('onMessage', msg);
+    switch (msg.type) {
+      case 'emit':
+        const channel = addons.getChannel();
+        channel.emit(msg.payload.event, msg.payload.args);
+        break;
+      default:
+        console.warn('Unknown message from WebView', msg.type);
+    }
+  }, []);
+  const webviewRef = React.useRef<WebView>();
+  React.useEffect(() => {
+    const channel = addons.getChannel();
+    const listener = (data: any) => {
+      console.log('on:SET_CURRENT_STORY', data);
+      const {storyId} = data;
+      webviewRef.current?.injectJavaScript(String.raw`
+        storyChanged('${storyId}');
+        true;
+      `);
+    };
+    channel.on(Events.SET_CURRENT_STORY, listener);
+    return () => {
+      channel.off(Events.SET_CURRENT_STORY, listener);
+    };
+  }, []);
+
+  return (
+    <WebView
+      ref={webviewRef}
+      originWhitelist={['*']}
+      source={{html}}
+      onMessage={onMessage}
+    />
+  );
+}
+
+export default WebViewSidebar;
